@@ -1,0 +1,36 @@
+﻿{
+  "title": "RAG Post Processor",
+  "description": "Clean and chunk text for RAG/LLM ingestion",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "datasetId": {
+      "title": "Dataset ID (for chaining)",
+      "type": "string",
+      "editor": "textfield",
+      "description": "Apify dataset ID from a previous actor run. Use this to chain directly after any scraper."
+    },
+    "data": {
+      "title": "Input Items",
+      "type": "array",
+      "editor": "json",
+      "items": { "type": "object" },
+      "description": "Array of objects from a previous scraper. Each needs a text, content, markdown, or html field."
+    },
+    "chunk_size": {
+      "title": "Chunk Size (characters)",
+      "type": "integer",
+      "editor": "number",
+      "default": 1000,
+      "minimum": 100,
+      "description": "Maximum number of characters per chunk. Default is 1000."
+    },
+    "overlap": {
+      "title": "Overlap between chunks",
+      "type": "integer",
+      "editor": "number",
+      "default": 100,
+      "description": "Number of characters to overlap between consecutive chunks. Default is 100."
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "title": "RAG Post-Processor",
+  "description": "Cleans and chunks text for LLM/RAG pipelines. Feed me raw scraped data!",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "data": {
+      "title": "Input Data",
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "description": "Array of items from previous scraper (or single object)"
+    },
+    "items": {
+      "title": "Alternative Items field",
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}

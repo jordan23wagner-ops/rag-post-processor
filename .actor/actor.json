@@ -1,0 +1,7 @@
+{
+	"actorSpecification": 1,
+	"name": "rag-post-processor",
+	"version": "0.0",
+	"buildTag": "latest",
+	"environmentVariables": {}
+}
