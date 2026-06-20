@@ -1,6 +1,0 @@
-"TestName","Passed","ChunkCount","EmptyChunks","TotalChars","AvgChars","Issues"
-"Plain text - single chunk","True",,"0","82","0",""
-"HTML with boilerplate noise","True",,"0","231","0",""
-"Long text - should produce multiple chunks","True","2","0","1524","762",""
-"Text with extra whitespace and line breaks","True",,"0","125","0",""
-"Short edge case - minimal input","True",,"0","18","0",""
