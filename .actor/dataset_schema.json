@@ -1,0 +1,64 @@
+{
+    "actorSpecification": 1,
+    "fields": {
+        "type": "object",
+        "properties": {
+            "original_id": {
+                "type": "string",
+                "description": "ID of the source item this chunk came from (item id, url, or a generated index)."
+            },
+            "source_url": {
+                "type": "string",
+                "description": "URL of the source item, if one was present in the input."
+            },
+            "chunk_index": {
+                "type": "integer",
+                "description": "Zero-based position of this chunk within its source item."
+            },
+            "total_chunks": {
+                "type": "integer",
+                "description": "Total number of chunks produced from this source item."
+            },
+            "chunk_text": {
+                "type": "string",
+                "description": "Cleaned, chunked text ready for embedding."
+            },
+            "chunk_length_chars": {
+                "type": "integer",
+                "description": "Character length of this chunk."
+            },
+            "cleaned_at": {
+                "type": "string",
+                "description": "Timestamp when the run that produced this chunk started."
+            }
+        }
+    },
+    "views": {
+        "overview": {
+            "title": "Overview",
+            "transformation": {
+                "fields": [
+                    "original_id",
+                    "source_url",
+                    "chunk_index",
+                    "total_chunks",
+                    "chunk_text",
+                    "chunk_length_chars",
+                    "cleaned_at"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "original_id": { "label": "Source ID", "format": "text" },
+                    "source_url": { "label": "Source URL", "format": "link" },
+                    "chunk_index": { "label": "Chunk #", "format": "number" },
+                    "total_chunks": { "label": "Total Chunks", "format": "number" },
+                    "chunk_text": { "label": "Text", "format": "text" },
+                    "chunk_length_chars": { "label": "Chars", "format": "number" },
+                    "cleaned_at": { "label": "Cleaned At", "format": "date" }
+                }
+            }
+        }
+    }
+}
