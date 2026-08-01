@@ -1,4 +1,4 @@
-"""Unit tests for input-kb-processed billing: pin the arithmetic and prove
+"""Unit tests for input_kb_processed billing: pin the arithmetic and prove
 chunk count no longer affects charge count. This is revenue-critical code.
 
 Dev-only; excluded from the shipped image via .dockerignore. Run with:

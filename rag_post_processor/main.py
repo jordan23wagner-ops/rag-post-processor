@@ -44,7 +44,7 @@ def fetch_dataset_items(dataset_id: str, token: str) -> List[dict]:
     return []
 
 
-INPUT_KB_EVENT = "input-kb-processed"
+INPUT_KB_EVENT = "input_kb_processed"
 
 
 def compute_input_bytes(items: List[Any]) -> int:
@@ -67,7 +67,7 @@ def compute_billed_units(total_bytes: int) -> int:
 
 
 async def charge_for_input(items: List[Any]):
-    """The single place input-kb-processed is charged, based purely on the
+    """The single place input_kb_processed is charged, based purely on the
     raw byte size of `items` as received - not on anything the chunker
     later produces. Must run before any cleaning/chunking/compute. Returns
     (units_charged, charge_result); charge_result is None when there was
@@ -232,7 +232,7 @@ async def main() -> None:
                     f"expected bound of {e.expected} for chunk_size={e.chunk_size}, "
                     f"overlap={e.overlap}. Aborting this item to avoid runaway output; "
                     f"no chunks were pushed for it. (Input was already charged in full "
-                    f"under input-kb-processed, independent of this item's chunk count.)"
+                    f"under input_kb_processed, independent of this item's chunk count.)"
                 )
                 continue
             except Exception as e:
