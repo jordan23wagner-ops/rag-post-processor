@@ -1,0 +1,13 @@
+{
+    "actorOutputSchemaVersion": 1,
+    "title": "RAG Post-Processor output",
+    "description": "Cleaned, chunked text ready for embedding, produced from whatever source items were passed in on the input dataset.",
+    "properties": {
+        "chunks": {
+            "type": "string",
+            "title": "Chunks",
+            "description": "Dataset of cleaned, chunked text items ready for embedding. See the dataset schema for the item fields.",
+            "template": "{{links.apiDefaultDatasetUrl}}/items"
+        }
+    }
+}
