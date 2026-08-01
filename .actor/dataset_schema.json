@@ -17,11 +17,11 @@
             },
             "total_chunks": {
                 "type": "integer",
-                "description": "Total number of chunks produced from this source item."
+                "description": "Total number of chunks produced from this source item, after any trailing short chunk has been merged into the previous one per min_chunk_chars."
             },
             "chunk_text": {
                 "type": "string",
-                "description": "Cleaned, chunked text ready for embedding."
+                "description": "Cleaned, chunked text ready for embedding. The final chunk of an item may run slightly longer than chunk_size if a too-short tail was merged into it (see min_chunk_chars input) rather than being dropped."
             },
             "chunk_length_chars": {
                 "type": "integer",

@@ -1,8 +1,27 @@
 ﻿from apify import Actor
+import math
 import re
 import json
 import urllib.request
 from typing import List, Any
+
+
+class ChunkCountExceeded(Exception):
+    """Raised when the chunker produces far more chunks than a sane bound
+    for the input length and chunk_size allow. Defense in depth against a
+    runaway number of billed rows, independent of input-schema validation
+    (which never sees values arriving via the datasetId chaining path)."""
+
+    def __init__(self, actual: int, expected: int, chunk_size: int, overlap: int):
+        self.actual = actual
+        self.expected = expected
+        self.chunk_size = chunk_size
+        self.overlap = overlap
+        super().__init__(
+            f"chunk count {actual} exceeded expected bound {expected} "
+            f"(chunk_size={chunk_size}, overlap={overlap})"
+        )
+
 
 SCRAPER_TEXT_FIELDS = [
     "text", "content", "body", "markdown", "html", "page_content",
@@ -21,9 +40,10 @@ def fetch_dataset_items(dataset_id: str, token: str) -> List[dict]:
         return data
     return []
 
-def resolve_chunk_params(actor_input: dict) -> tuple[int, int]:
-    chunk_size = actor_input.get("chunk_size", 1000)
-    overlap    = actor_input.get("overlap", 100)
+def resolve_chunk_params(actor_input: dict) -> tuple[int, int, int]:
+    chunk_size      = actor_input.get("chunk_size", 1000)
+    overlap         = actor_input.get("overlap", 100)
+    min_chunk_chars = actor_input.get("min_chunk_chars", 50)
 
     if not isinstance(chunk_size, int) or isinstance(chunk_size, bool) or chunk_size <= 0:
         Actor.log.warning(
@@ -39,6 +59,13 @@ def resolve_chunk_params(actor_input: dict) -> tuple[int, int]:
         )
         overlap = 100
 
+    if not isinstance(min_chunk_chars, int) or isinstance(min_chunk_chars, bool) or min_chunk_chars < 0:
+        Actor.log.warning(
+            f"Invalid min_chunk_chars {min_chunk_chars!r} (expected a non-negative "
+            f"integer); falling back to default 50."
+        )
+        min_chunk_chars = 50
+
     max_overlap = chunk_size // 2
     if overlap > max_overlap:
         Actor.log.warning(
@@ -49,13 +76,13 @@ def resolve_chunk_params(actor_input: dict) -> tuple[int, int]:
         )
         overlap = max_overlap
 
-    return chunk_size, overlap
+    return chunk_size, overlap, min_chunk_chars
 
 
 async def main() -> None:
     async with Actor:
         actor_input = await Actor.get_input() or {}
-        chunk_size, overlap = resolve_chunk_params(actor_input)
+        chunk_size, overlap, min_chunk_chars = resolve_chunk_params(actor_input)
         items      = []
 
         # === CHAINING MODE: accept datasetId from previous actor ===
@@ -120,7 +147,9 @@ async def main() -> None:
                     raw_text = json.dumps(item, ensure_ascii=False, default=str)
 
                 clean = clean_text_function(raw_text)
-                chunks = chunk_text(clean, chunk_size=chunk_size, overlap=overlap)
+                chunks = chunk_text(
+                    clean, chunk_size=chunk_size, overlap=overlap, min_chunk_chars=min_chunk_chars
+                )
 
                 source_url = item.get("url") or item.get("sourceUrl") or item.get("link") or ""
                 source_id  = str(item.get("id") or item.get("url") or f"item_{idx}")
@@ -144,6 +173,14 @@ async def main() -> None:
                         dataset_item["source_url"] = source_url
                     await Actor.push_data(dataset_item)
                     processed_count += 1
+            except ChunkCountExceeded as e:
+                Actor.log.error(
+                    f"Item {idx}: chunker produced {e.actual} chunks, exceeding the "
+                    f"expected bound of {e.expected} for chunk_size={e.chunk_size}, "
+                    f"overlap={e.overlap}. Aborting this item to avoid a runaway "
+                    f"number of billed rows; no chunks were pushed for it."
+                )
+                continue
             except Exception as e:
                 Actor.log.warning(f"Skipping item {idx} due to unexpected error: {e}")
                 continue
@@ -162,13 +199,29 @@ def clean_text_function(text: str) -> str:
     return text.strip()
 
 
-def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 100) -> List[str]:
+def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 100, min_chunk_chars: int = 50) -> List[str]:
+    if not text:
+        return []
     if len(text) <= chunk_size:
         return [text]
 
+    # Output-count invariant: a hard bound on how many chunks/loop iterations
+    # a single input item may produce, independent of whatever chunk_size/
+    # overlap were passed in. This is the last line of defense against a
+    # runaway number of billed rows (or an infinite loop, e.g. chunk_size<=0)
+    # for values that never passed through input-schema validation - notably
+    # items arriving via the datasetId chaining path at runtime.
+    max_expected = math.ceil(len(text) / max(1, chunk_size // 2)) + 2
+
     chunks = []
+    starts = []
     start  = 0
+    attempts = 0
     while start < len(text):
+        attempts += 1
+        if attempts > max_expected:
+            raise ChunkCountExceeded(attempts, max_expected, chunk_size, overlap)
+
         end   = start + chunk_size
         chunk = text[start:end]
 
@@ -177,10 +230,21 @@ def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 100) -> List[st
             if last_period > chunk_size * 0.6:
                 end = start + last_period + 1
 
-        chunks.append(text[start:end].strip())
+        piece = text[start:end].strip()
+        if piece:
+            chunks.append(piece)
+            starts.append(start)
         start = end - overlap if end - overlap > start else end
 
-    return [c for c in chunks if c]
+    # Merge (never drop) a too-short trailing chunk into the previous one,
+    # so no text ever becomes unsearchable in the customer's vector index.
+    if len(chunks) > 1 and len(chunks[-1]) < min_chunk_chars:
+        merge_from = starts[-2]
+        chunks[-2] = text[merge_from:].strip()
+        chunks.pop()
+        starts.pop()
+
+    return chunks
 
 
 if __name__ == "__main__":
