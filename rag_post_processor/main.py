@@ -39,12 +39,15 @@ def resolve_chunk_params(actor_input: dict) -> tuple[int, int]:
         )
         overlap = 100
 
-    if overlap >= chunk_size:
+    max_overlap = chunk_size // 2
+    if overlap > max_overlap:
         Actor.log.warning(
-            f"overlap ({overlap}) must be smaller than chunk_size ({chunk_size}); "
-            f"clamping overlap to {chunk_size - 1}."
+            f"overlap ({overlap}) exceeds 50% of chunk_size ({chunk_size}); "
+            f"a large overlap causes near-duplicate chunks and inflates cost on "
+            f"actors billed per chunk. Requested overlap={overlap}, applying "
+            f"clamped overlap={max_overlap} (chunk_size // 2)."
         )
-        overlap = chunk_size - 1
+        overlap = max_overlap
 
     return chunk_size, overlap
 
@@ -122,16 +125,24 @@ async def main() -> None:
                 source_url = item.get("url") or item.get("sourceUrl") or item.get("link") or ""
                 source_id  = str(item.get("id") or item.get("url") or f"item_{idx}")
 
+                started_at = Actor.get_env()["started_at"]
+                cleaned_at = started_at.isoformat() if hasattr(started_at, "isoformat") else str(started_at)
+
                 for i, chunk in enumerate(chunks):
-                    await Actor.push_data({
+                    dataset_item = {
                         "original_id":        source_id,
-                        "source_url":         source_url,
                         "chunk_index":        i,
                         "total_chunks":       len(chunks),
                         "chunk_text":         chunk,
                         "chunk_length_chars": len(chunk),
-                        "cleaned_at":         str(Actor.get_env()["started_at"]),
-                    })
+                        "cleaned_at":         cleaned_at,
+                    }
+                    if source_url:
+                        # Omitted (not emitted as "") when absent so the dataset
+                        # schema's "link" format doesn't try to render an empty
+                        # string as a URL.
+                        dataset_item["source_url"] = source_url
+                    await Actor.push_data(dataset_item)
                     processed_count += 1
             except Exception as e:
                 Actor.log.warning(f"Skipping item {idx} due to unexpected error: {e}")
