@@ -47,7 +47,9 @@ Each chunk is returned as a dataset item:
 
 ## Pricing
 
-$0.0003 per output row. No subscription required — pay only for what you use.
+$0.0005 per KB of input processed (rounded up), charged once per run based on
+the raw size of the input you send in — not on how many chunks it turns
+into. No subscription required — pay only for what you use.
 
 ## Use with PowerShell
 

@@ -8,9 +8,12 @@ from typing import List, Any
 
 class ChunkCountExceeded(Exception):
     """Raised when the chunker produces far more chunks than a sane bound
-    for the input length and chunk_size allow. Defense in depth against a
-    runaway number of billed rows, independent of input-schema validation
-    (which never sees values arriving via the datasetId chaining path)."""
+    for the input length and chunk_size allow. Defense in depth against
+    runaway output/compute for a single item (e.g. an infinite loop from
+    chunk_size<=0), independent of input-schema validation (which never
+    sees values arriving via the datasetId chaining path). Billing is no
+    longer tied to chunk count - see charge_for_input - so this guards
+    compute and output size, not cost."""
 
     def __init__(self, actual: int, expected: int, chunk_size: int, overlap: int):
         self.actual = actual
@@ -39,6 +42,41 @@ def fetch_dataset_items(dataset_id: str, token: str) -> List[dict]:
     if isinstance(data, list):
         return data
     return []
+
+
+INPUT_KB_EVENT = "input-kb-processed"
+
+
+def compute_input_bytes(items: List[Any]) -> int:
+    """Raw size of the input as received, in bytes, before any cleaning or
+    chunking. Sums each item's own JSON-serialized byte length, so inline
+    data/items and items fetched via the datasetId chaining path are
+    measured identically - whichever path populated `items`, this is the
+    same computation over the same list."""
+    return sum(
+        len(json.dumps(item, ensure_ascii=False, default=str).encode("utf-8"))
+        for item in items
+    )
+
+
+def compute_billed_units(total_bytes: int) -> int:
+    """units = max(1, ceil(bytes / 1024)); 0 bytes -> 0 units (no charge)."""
+    if total_bytes <= 0:
+        return 0
+    return max(1, math.ceil(total_bytes / 1024))
+
+
+async def charge_for_input(items: List[Any]):
+    """The single place input-kb-processed is charged, based purely on the
+    raw byte size of `items` as received - not on anything the chunker
+    later produces. Must run before any cleaning/chunking/compute. Returns
+    (units_charged, charge_result); charge_result is None when there was
+    nothing to charge for (empty input)."""
+    units = compute_billed_units(compute_input_bytes(items))
+    if units == 0:
+        return units, None
+    result = await Actor.charge(event_name=INPUT_KB_EVENT, count=units)
+    return units, result
 
 def resolve_chunk_params(actor_input: dict) -> tuple[int, int, int]:
     chunk_size      = actor_input.get("chunk_size", 1000)
@@ -70,9 +108,9 @@ def resolve_chunk_params(actor_input: dict) -> tuple[int, int, int]:
     if overlap > max_overlap:
         Actor.log.warning(
             f"overlap ({overlap}) exceeds 50% of chunk_size ({chunk_size}); "
-            f"a large overlap causes near-duplicate chunks and inflates cost on "
-            f"actors billed per chunk. Requested overlap={overlap}, applying "
-            f"clamped overlap={max_overlap} (chunk_size // 2)."
+            f"a large overlap causes excessive near-duplicate chunks. "
+            f"Requested overlap={overlap}, applying clamped overlap={max_overlap} "
+            f"(chunk_size // 2)."
         )
         overlap = max_overlap
 
@@ -119,7 +157,22 @@ async def main() -> None:
         if not items and actor_input:
             items = [actor_input]
 
-        Actor.log.info(f"Processing {len(items)} items...")
+        # Charge exactly once, before any cleaning/chunking, based only on
+        # the raw bytes received - not on chunk count. Respect the run's
+        # spend cap before doing any billable work.
+        units_charged, charge_result = await charge_for_input(items)
+        if charge_result is not None and getattr(charge_result, "event_charge_limit_reached", False):
+            Actor.log.warning(
+                f"This input requires {units_charged} unit(s) of '{INPUT_KB_EVENT}', "
+                f"which exceeds this run's configured max cost per run. Emitting "
+                f"nothing and exiting without processing any items."
+            )
+            await Actor.set_status_message(
+                f"Stopped: input requires {units_charged} unit(s), exceeding this run's cost cap."
+            )
+            return
+
+        Actor.log.info(f"Processing {len(items)} items ({units_charged} unit(s) charged for input size)...")
         processed_count = 0
 
         for idx, item in enumerate(items):
@@ -177,8 +230,9 @@ async def main() -> None:
                 Actor.log.error(
                     f"Item {idx}: chunker produced {e.actual} chunks, exceeding the "
                     f"expected bound of {e.expected} for chunk_size={e.chunk_size}, "
-                    f"overlap={e.overlap}. Aborting this item to avoid a runaway "
-                    f"number of billed rows; no chunks were pushed for it."
+                    f"overlap={e.overlap}. Aborting this item to avoid runaway output; "
+                    f"no chunks were pushed for it. (Input was already charged in full "
+                    f"under input-kb-processed, independent of this item's chunk count.)"
                 )
                 continue
             except Exception as e:
@@ -207,10 +261,12 @@ def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 100, min_chunk_
 
     # Output-count invariant: a hard bound on how many chunks/loop iterations
     # a single input item may produce, independent of whatever chunk_size/
-    # overlap were passed in. This is the last line of defense against a
-    # runaway number of billed rows (or an infinite loop, e.g. chunk_size<=0)
-    # for values that never passed through input-schema validation - notably
-    # items arriving via the datasetId chaining path at runtime.
+    # overlap were passed in. This is the last line of defense against
+    # runaway output or an infinite loop (e.g. chunk_size<=0) for values
+    # that never passed through input-schema validation - notably items
+    # arriving via the datasetId chaining path at runtime. Chunk count no
+    # longer affects billing (see charge_for_input), so this guards compute
+    # and dataset size, not cost.
     max_expected = math.ceil(len(text) / max(1, chunk_size // 2)) + 2
 
     chunks = []

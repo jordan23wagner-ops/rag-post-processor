@@ -30,7 +30,7 @@
       "type": "integer",
       "editor": "number",
       "default": 100,
-      "description": "Number of characters to overlap between consecutive chunks. Default is 100. Capped at 50% of chunk_size to bound the number of billed rows."
+      "description": "Number of characters to overlap between consecutive chunks. Default is 100. Capped at 50% of chunk_size to avoid excessive near-duplicate chunks."
     },
     "min_chunk_chars": {
       "title": "Minimum chunk length (characters)",
@@ -39,7 +39,7 @@
       "default": 50,
       "minimum": 0,
       "maximum": 1000,
-      "description": "If the final chunk of an item is shorter than this, it's merged into the previous chunk instead of being emitted as its own (billable) row. No text is ever dropped. Default is 50."
+      "description": "If the final chunk of an item is shorter than this, it's merged into the previous chunk instead of being emitted as its own row. No text is ever dropped. Default is 50."
     }
   }
 }
