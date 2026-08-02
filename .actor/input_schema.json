@@ -1,6 +1,6 @@
 {
   "title": "RAG Post Processor",
-  "description": "Clean and chunk text for RAG/LLM ingestion",
+  "description": "Clean and chunk scraped text into embedding-ready chunks, sized in tokens and split on document structure.",
   "type": "object",
   "schemaVersion": 1,
   "properties": {
@@ -8,38 +8,96 @@
       "title": "Dataset ID (for chaining)",
       "type": "string",
       "editor": "textfield",
-      "description": "Apify dataset ID from a previous actor run. Use this to chain directly after any scraper."
+      "description": "Apify dataset ID from a previous Actor run. Use this to chain directly after any scraper. All pages are read, not just the first."
     },
     "data": {
-      "title": "Input Items",
+      "title": "Input items",
       "type": "array",
       "editor": "json",
       "items": { "type": "object" },
-      "description": "Array of objects from a previous scraper. Each needs a text, content, markdown, or html field."
+      "description": "Array of objects from a previous scraper. Each needs a text field — markdown, text, content, body, html and around 25 other common names are recognised automatically."
     },
-    "chunk_size": {
-      "title": "Chunk Size (characters)",
+    "text_field": {
+      "title": "Text field name",
+      "type": "string",
+      "editor": "textfield",
+      "sectionCaption": "Input",
+      "description": "Name the field to read instead of relying on automatic detection. Useful when your scraper uses a custom field name, or when an item has several text fields and you want a specific one. The field actually used is reported on every output row as source_field."
+    },
+    "max_tokens": {
+      "title": "Max tokens per chunk",
       "type": "integer",
       "editor": "number",
-      "default": 1000,
-      "minimum": 100,
-      "description": "Maximum number of characters per chunk. Default is 1000."
+      "default": 512,
+      "minimum": 16,
+      "maximum": 8191,
+      "sectionCaption": "Chunking",
+      "sectionDescription": "Budgets are in tokens, not characters, because tokens are what embedding models limit on and charge for. The same 1000-character chunk is roughly 160 tokens of English and 1080 tokens of Japanese.",
+      "description": "Hard ceiling on tokens per chunk, measured with the encoding below. No emitted chunk ever exceeds this. 8191 is the input limit for OpenAI's text-embedding-3 models."
     },
-    "overlap": {
-      "title": "Overlap between chunks",
+    "overlap_tokens": {
+      "title": "Overlap between chunks (tokens)",
       "type": "integer",
       "editor": "number",
-      "default": 100,
-      "description": "Number of characters to overlap between consecutive chunks. Default is 100. Capped at 50% of chunk_size to avoid excessive near-duplicate chunks."
-    },
-    "min_chunk_chars": {
-      "title": "Minimum chunk length (characters)",
-      "type": "integer",
-      "editor": "number",
-      "default": 50,
+      "default": 64,
       "minimum": 0,
-      "maximum": 1000,
-      "description": "If the final chunk of an item is shorter than this, it's merged into the previous chunk instead of being emitted as its own row. No text is ever dropped. Default is 50."
+      "maximum": 8191,
+      "description": "Tokens of trailing context repeated at the start of the next chunk. Only whole sentences are carried, so a chunk never begins mid-word. Clamped to 50% of max_tokens; 50% is fully supported. Overlap duplicates tokens, and the run log reports the resulting amplification so you can budget your embedding spend."
+    },
+    "min_tokens": {
+      "title": "Minimum tokens per chunk",
+      "type": "integer",
+      "editor": "number",
+      "default": 24,
+      "minimum": 0,
+      "description": "Chunks below this are merged into the previous chunk rather than emitted as their own row. No text is ever dropped."
+    },
+    "encoding": {
+      "title": "Tokenizer encoding",
+      "type": "string",
+      "editor": "select",
+      "default": "cl100k_base",
+      "enum": ["cl100k_base", "o200k_base", "p50k_base", "r50k_base"],
+      "enumTitles": [
+        "cl100k_base — text-embedding-3-small/large, ada-002, GPT-4",
+        "o200k_base — GPT-4o, GPT-5, o1, o3",
+        "p50k_base — Codex, text-davinci-002/003",
+        "r50k_base — GPT-3 (davinci)"
+      ],
+      "description": "Which tokenizer to measure with. Pick the one your embedding model uses. Note that text-embedding-3-small and -large use cl100k_base, not o200k_base, despite being newer models. The BPE tables are bundled into the image, so no download happens at run time."
+    },
+    "split_on_heading_level": {
+      "title": "Force a new chunk at heading level",
+      "type": "integer",
+      "editor": "number",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 6,
+      "sectionCaption": "Structure",
+      "sectionDescription": "Chunks are built from document blocks — headings, paragraphs, fenced code, tables and lists — rather than by slicing a character stream. Code that must be split keeps its fence and language on every part, and a split table repeats its header row, so each chunk is still interpretable on its own after retrieval.",
+      "description": "0 packs sections together to fill the budget. Set 1 to 6 to start a new chunk at every heading of that level or higher, so one section never bleeds into the next. Use 2 for typical documentation pages."
+    },
+    "include_heading_context": {
+      "title": "Prefix chunks with their heading path",
+      "type": "boolean",
+      "editor": "checkbox",
+      "default": true,
+      "description": "Prepend the breadcrumb (for example \"Widget SDK > Quick start\") to each chunk's text, so an isolated passage still carries the context a retriever needs. The path is also emitted separately as heading_path and section on every row."
+    },
+    "preserve_links": {
+      "title": "Keep URLs and links",
+      "type": "boolean",
+      "editor": "checkbox",
+      "default": true,
+      "sectionCaption": "Cleaning",
+      "description": "Keep URLs in the text and convert HTML anchors to markdown links, so retrieved passages can still be cited. Turn off only if you want URLs stripped entirely."
+    },
+    "drop_nav": {
+      "title": "Drop navigation chrome",
+      "type": "boolean",
+      "editor": "checkbox",
+      "default": true,
+      "description": "Remove nav and menu contents. Script, style, noscript, template, svg and comment contents are always removed."
     }
   }
 }

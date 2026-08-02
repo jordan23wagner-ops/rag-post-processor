@@ -3,13 +3,21 @@
     "fields": {
         "type": "object",
         "properties": {
+            "chunk_id": {
+                "type": "string",
+                "description": "Stable identifier for this chunk: the first 16 hex characters of its content hash plus its index. Re-running on unchanged content produces the same value, so you can upsert instead of re-embedding."
+            },
             "original_id": {
                 "type": "string",
-                "description": "ID of the source item this chunk came from (item id, url, or a generated index)."
+                "description": "ID of the source item this chunk came from (item id, URL, or a generated index)."
             },
             "source_url": {
                 "type": "string",
                 "description": "URL of the source item, if one was present in the input."
+            },
+            "source_field": {
+                "type": "string",
+                "description": "Which field of the source item the text was read from (for example markdown, text, html). Lets you confirm the Actor read the field you meant."
             },
             "chunk_index": {
                 "type": "integer",
@@ -17,15 +25,43 @@
             },
             "total_chunks": {
                 "type": "integer",
-                "description": "Total number of chunks produced from this source item, after any trailing short chunk has been merged into the previous one per min_chunk_chars."
+                "description": "Total number of chunks produced from this source item."
             },
             "chunk_text": {
                 "type": "string",
-                "description": "Cleaned, chunked text ready for embedding. The final chunk of an item may run slightly longer than chunk_size if a too-short tail was merged into it (see min_chunk_chars input) rather than being dropped."
+                "description": "Cleaned, structure-aware chunk ready for embedding. Never exceeds max_tokens under the selected encoding. Split code blocks keep their fence and language; split tables repeat their header row."
+            },
+            "token_count": {
+                "type": "integer",
+                "description": "Exact token count of chunk_text under the selected encoding. Use it to batch embedding requests without re-tokenizing."
+            },
+            "token_count_method": {
+                "type": "string",
+                "description": "How token_count was produced: 'tiktoken:<encoding>' for an exact BPE count, or 'estimated:chars' if the tokenizer was unavailable and a conservative character heuristic was used instead."
             },
             "chunk_length_chars": {
                 "type": "integer",
                 "description": "Character length of this chunk."
+            },
+            "heading_path": {
+                "type": "array",
+                "description": "Ordered heading hierarchy this chunk sits under, outermost first. Empty for documents without headings."
+            },
+            "section": {
+                "type": "string",
+                "description": "heading_path joined with ' > ', for display and metadata filtering."
+            },
+            "block_kinds": {
+                "type": "array",
+                "description": "Structural block types present in this chunk: heading, paragraph, list, table, code, quote. Useful for filtering code out of prose retrieval, or vice versa."
+            },
+            "content_hash": {
+                "type": "string",
+                "description": "SHA-256 of chunk_text. Identical content always hashes identically, so unchanged chunks can be skipped on a re-run."
+            },
+            "overlap_tokens": {
+                "type": "integer",
+                "description": "How many of this chunk's tokens were carried over from the previous chunk as overlap context. 0 on the first chunk of an item and at every section boundary."
             },
             "cleaned_at": {
                 "type": "string",
@@ -38,25 +74,48 @@
             "title": "Overview",
             "transformation": {
                 "fields": [
-                    "original_id",
+                    "chunk_id",
                     "source_url",
+                    "section",
                     "chunk_index",
                     "total_chunks",
                     "chunk_text",
-                    "chunk_length_chars",
+                    "token_count",
+                    "block_kinds",
+                    "overlap_tokens",
                     "cleaned_at"
                 ]
             },
             "display": {
                 "component": "table",
                 "properties": {
-                    "original_id": { "label": "Source ID", "format": "text" },
+                    "chunk_id": { "label": "Chunk ID", "format": "text" },
                     "source_url": { "label": "Source URL", "format": "link" },
+                    "section": { "label": "Section", "format": "text" },
                     "chunk_index": { "label": "Chunk #", "format": "number" },
-                    "total_chunks": { "label": "Total Chunks", "format": "number" },
+                    "total_chunks": { "label": "Of", "format": "number" },
                     "chunk_text": { "label": "Text", "format": "text" },
-                    "chunk_length_chars": { "label": "Chars", "format": "number" },
+                    "token_count": { "label": "Tokens", "format": "number" },
+                    "block_kinds": { "label": "Contains", "format": "array" },
+                    "overlap_tokens": { "label": "Overlap", "format": "number" },
                     "cleaned_at": { "label": "Cleaned At", "format": "date" }
+                }
+            }
+        },
+        "embedding_ready": {
+            "title": "Embedding payload",
+            "transformation": {
+                "fields": ["chunk_id", "chunk_text", "token_count", "section", "source_url", "content_hash"]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "chunk_id": { "label": "ID", "format": "text" },
+                    "chunk_text": { "label": "Text", "format": "text" },
+                    "token_count": { "label": "Tokens", "format": "number" },
+                    "section": { "label": "Section", "format": "text" },
+                    "source_url": { "label": "Source", "format": "link" },
+                    "content_hash": { "label": "Hash", "format": "text" }
                 }
             }
         }
