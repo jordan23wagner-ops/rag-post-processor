@@ -1,2 +1,8 @@
-﻿# Python dependencies
+# Python dependencies
 apify >= 3.0.0, < 4.0.0
+
+# Exact token counting. The BPE tables are downloaded once at image BUILD time
+# into TIKTOKEN_CACHE_DIR (see Dockerfile), never at run time -- a runtime
+# fetch from openaipublic.blob.core.windows.net would be a reliability risk on
+# every single run.
+tiktoken >= 0.9.0, < 1.0.0
